@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { admin, userFromToken, businessForUser, getProducts, lowStock, salesSummary, recordMovement, recordSale, HttpError } from './services.js';
+import { admin, userFromToken, businessForUser, getProducts, createProduct, lowStock, salesSummary, recordMovement, recordSale, HttpError } from './services.js';
 
 export const api = express.Router();
 api.use(express.json({ limit: '200kb' }));
@@ -23,10 +23,7 @@ api.get('/products', async (req: AuthRequest, res, next) => { try { res.json(awa
 api.post('/products', async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ sku:z.string().trim().min(1).max(80), name:z.string().trim().min(1).max(160), category:z.string().trim().max(100).default('General'), unit:z.string().trim().max(30).default('unit'), currency:z.enum(['USD','ZWG']), costPrice:z.number().min(0), sellingPrice:z.number().min(0), quantity:z.number().min(0), reorderLevel:z.number().min(0).default(0) }).parse(req.body);
-    const { data, error } = await admin.from('products').insert({ business_id:req.business!.businessId, sku:body.sku, name:body.name, category:body.category, unit:body.unit, currency:body.currency, cost_price:body.costPrice, selling_price:body.sellingPrice, quantity:body.quantity, reorder_level:body.reorderLevel }).select('*').single();
-    if (error) throw new HttpError(400, error.message);
-    if (body.quantity > 0) await admin.from('stock_movements').insert({ business_id:req.business!.businessId, product_id:data.id, movement_type:'opening', quantity_delta:body.quantity, quantity_after:body.quantity, currency:body.currency, unit_cost:body.costPrice, reason:'Opening stock on product creation', created_by:req.user!.id });
-    await admin.from('audit_log').insert({ business_id:req.business!.businessId, actor_user_id:req.user!.id, action:'product_created', entity_type:'product', entity_id:data.id, details:{sku:body.sku,name:body.name} });
+    const data = await createProduct({userId:req.user!.id,businessId:req.business!.businessId,...body});
     res.status(201).json(data);
   } catch(e) { next(e); }
 });
@@ -65,6 +62,5 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
   if(status===500) console.error(err);
   return res.status(status).json({error:status===500?'Internal server error':err.message});
 }
-
 
 

@@ -208,7 +208,33 @@ begin
   return jsonb_build_object('product',jsonb_build_object('id',p.id,'name',p.name,'sku',p.sku,'quantity',v_after),'movement',to_jsonb(v_movement));
 end; $$;
 
+create or replace function public.stockpilot_create_product(
+  p_business_id uuid, p_user_id uuid, p_sku text, p_name text,
+  p_category text, p_unit text, p_currency public.stockpilot_currency,
+  p_cost_price numeric, p_selling_price numeric, p_quantity numeric,
+  p_reorder_level numeric
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_product public.products%rowtype;
+begin
+  if length(trim(p_sku)) < 1 or length(trim(p_name)) < 1 then raise exception 'SKU and name are required'; end if;
+  if p_cost_price < 0 or p_selling_price < 0 or p_quantity < 0 or p_reorder_level < 0 then raise exception 'Prices and quantities cannot be negative'; end if;
+  insert into public.products(business_id,sku,name,category,unit,currency,cost_price,selling_price,quantity,reorder_level)
+    values(p_business_id,trim(p_sku),trim(p_name),coalesce(nullif(trim(p_category),''),'General'),coalesce(nullif(trim(p_unit),''),'unit'),p_currency,p_cost_price,p_selling_price,p_quantity,p_reorder_level)
+    returning * into v_product;
+  if p_quantity > 0 then
+    insert into public.stock_movements(business_id,product_id,movement_type,quantity_delta,quantity_after,currency,unit_cost,reason,created_by)
+      values(p_business_id,v_product.id,'opening',p_quantity,p_quantity,p_currency,p_cost_price,'Opening stock on product creation',p_user_id);
+  end if;
+  insert into public.audit_log(business_id,actor_user_id,action,entity_type,entity_id,details)
+    values(p_business_id,p_user_id,'product_created','product',v_product.id,jsonb_build_object('sku',v_product.sku,'name',v_product.name));
+  return to_jsonb(v_product);
+exception when unique_violation then
+  raise exception 'A product with this SKU already exists in this business';
+end; $$;
+
 revoke all on function public.stockpilot_record_sale(uuid,uuid,public.stockpilot_currency,jsonb,text,text) from public, anon, authenticated;
 revoke all on function public.stockpilot_record_stock_movement(uuid,uuid,uuid,numeric,public.stockpilot_movement_type,text,public.stockpilot_currency,numeric) from public, anon, authenticated;
+revoke all on function public.stockpilot_create_product(uuid,uuid,text,text,text,text,public.stockpilot_currency,numeric,numeric,numeric,numeric) from public, anon, authenticated;
 grant execute on function public.stockpilot_record_sale(uuid,uuid,public.stockpilot_currency,jsonb,text,text) to service_role;
 grant execute on function public.stockpilot_record_stock_movement(uuid,uuid,uuid,numeric,public.stockpilot_movement_type,text,public.stockpilot_currency,numeric) to service_role;
+grant execute on function public.stockpilot_create_product(uuid,uuid,text,text,text,text,public.stockpilot_currency,numeric,numeric,numeric,numeric) to service_role;

@@ -16,7 +16,7 @@ This is an MVP starter, not a deployed production service. The dashboard's built
 Browser dashboard → authenticated Express API → Supabase/Postgres.
 AI client (ChatGPT app/connector where supported, or Hermes) → MCP endpoint → same authenticated business services.
 
-The MCP server uses a bearer token mapped to a StockPilot user. For initial pilots, create a dedicated `STOCKPILOT_MCP_TOKEN` per user and store its SHA-256 hash in `mcp_tokens`; never use one shared token across customers. A production rollout should use OAuth where required by the target client and rotate/revoke credentials.
+The MCP server resolves bearer tokens through the revocable `mcp_tokens` table and maps each token to a StockPilot user. Store only a SHA-256 hash, never the raw token. The legacy `MCP_BEARER_TOKEN`/`MCP_USER_ID` pair remains available for a controlled local pilot, but should not be used for a public multi-tenant rollout. OAuth or per-user credentials are required for production.
 
 ## 1. Create Supabase
 1. Use the connected Supabase project or create a separate project for another environment.
@@ -36,7 +36,7 @@ Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PORT`, `M
 The REST API listens on `http://localhost:9401`; MCP listens at `http://localhost:9401/mcp`.
 
 ## 3. Connect dashboard
-Serve `web/` on a static host (GitHub Pages, Netlify, etc.). Set `window.STOCKPILOT_API_BASE` before `app.js` loads, or edit the constant in `web/app.js` to your deployed API URL. Sign in with Supabase Auth in the production UI; the current static page is a design prototype and does not yet include the sign-in form. Do not use demo mode for real inventory.
+Serve `web/` on a static host (GitHub Pages, Netlify, etc.). Copy `web/config.example.js` to `web/config.js` and set the deployed API URL plus the Supabase publishable/anon key. `config.js` is ignored by Git. The current page remains a demo UI and does not yet include the live Supabase sign-in form; do not use demo mode for real inventory.
 
 ## 4. MCP tools
 - `stockpilot_list_products`: list products and quantities.
@@ -62,6 +62,6 @@ The MCP token maps to one user and all queries are scoped to that user's busines
 - Set CORS to a specific origin.
 - Add rate limiting, request size limits, structured logging and monitoring.
 - Test tenant isolation and concurrent sale/stock updates.
+- Use the atomic product-creation RPC so the product, opening-stock ledger, and audit entry cannot partially commit.
 - Confirm local tax/accounting requirements with a qualified professional; gross profit here excludes overhead, tax and payment fees.
-
 

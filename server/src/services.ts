@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export const supabaseUrl = process.env.SUPABASE_URL!;
@@ -10,6 +11,16 @@ export async function userFromToken(token: string) {
   const { data, error } = await authClient.auth.getUser(token);
   if (error || !data.user) throw new HttpError(401, 'Invalid or expired access token');
   return data.user;
+}
+export async function mcpUserFromToken(token: string) {
+  if (!token) throw new HttpError(401, 'MCP bearer token required');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const { data, error } = await admin.from('mcp_tokens').select('user_id').eq('token_sha256', tokenHash).is('revoked_at', null).limit(1).maybeSingle();
+  if (!error && data?.user_id) return data.user_id as string;
+  const legacyToken = process.env.MCP_BEARER_TOKEN ?? '';
+  const legacyUser = process.env.MCP_USER_ID ?? '';
+  if (legacyToken && legacyUser && token === legacyToken) return legacyUser;
+  throw new HttpError(401, 'Unauthorized MCP client');
 }
 export async function businessForUser(userId: string) {
   const { data, error } = await admin.from('business_members').select('business_id, role').eq('user_id', userId).limit(2);
@@ -24,6 +35,16 @@ export async function getProducts(businessId: string, search = '', limit = 100) 
   const { data, error } = await q;
   if (error) throw new HttpError(500, error.message);
   return data ?? [];
+}
+export async function createProduct(args: {userId:string; businessId:string; sku:string; name:string; category:string; unit:string; currency:'USD'|'ZWG'; costPrice:number; sellingPrice:number; quantity:number; reorderLevel:number}) {
+  const { data, error } = await admin.rpc('stockpilot_create_product', {
+    p_business_id: args.businessId, p_user_id: args.userId, p_sku: args.sku, p_name: args.name,
+    p_category: args.category, p_unit: args.unit, p_currency: args.currency,
+    p_cost_price: args.costPrice, p_selling_price: args.sellingPrice,
+    p_quantity: args.quantity, p_reorder_level: args.reorderLevel
+  });
+  if (error) throw new HttpError(error.message.includes('already exists') ? 409 : 400, error.message);
+  return data;
 }
 export async function lowStock(businessId: string) {
   const { data, error } = await admin.from('products').select('id,sku,name,category,quantity,reorder_level,unit,currency').eq('business_id', businessId).eq('active', true).order('name');
@@ -67,6 +88,4 @@ export async function recordSale(args: {userId:string; businessId:string; curren
   }
   return data;
 }
-
-
 
