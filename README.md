@@ -10,7 +10,7 @@ StockPilot is a retail inventory MVP with a web dashboard, Supabase/Postgres sch
 - `.env.example`: configuration template.
 
 ## Important status
-This is an MVP starter, not a deployed production service. The dashboard's built-in demo mode uses browser-local sample data. The API and MCP server require a configured Supabase project, environment variables, dependency installation, and deployment before they can access real records. Never put a Supabase service-role key in browser code.
+This is an MVP starter, not a deployed production service. The dashboard's built-in demo mode uses browser-local sample data. The StockPilot schema has been applied to the connected Supabase project `fpagqxumgaibapveyzuy` (`https://fpagqxumgaibapveyzuy.supabase.co`). The API and MCP server still require server environment variables, dependency installation, and deployment before they can access real records. Never put a Supabase service-role key in browser code.
 
 ## Architecture
 Browser dashboard → authenticated Express API → Supabase/Postgres.
@@ -19,11 +19,11 @@ AI client (ChatGPT app/connector where supported, or Hermes) → MCP endpoint �
 The MCP server uses a bearer token mapped to a StockPilot user. For initial pilots, create a dedicated `STOCKPILOT_MCP_TOKEN` per user and store its SHA-256 hash in `mcp_tokens`; never use one shared token across customers. A production rollout should use OAuth where required by the target client and rotate/revoke credentials.
 
 ## 1. Create Supabase
-1. Create a Supabase project.
-2. Open SQL Editor and run `server/supabase/schema.sql`.
+1. Use the connected Supabase project or create a separate project for another environment.
+2. The initial schema and RPC migration is already applied to the connected project. For a new project, run `server/supabase/schema.sql`.
 3. Create a user in Supabase Auth.
-4. Insert a row in `profiles` mapping that Auth user's UUID to a business in `business_members` (see SQL comments).
-5. Copy project URL and anon key. Keep service role key server-side only.
+4. Insert a row in `businesses` and a matching row in `business_members` for that Auth user's UUID (see SQL comments).
+5. Copy the project URL and anon key into a local `server/.env` based on `.env.example`. Keep the service role key server-side only.
 
 ## 2. Configure and run API/MCP server
 ```bash
@@ -63,6 +63,5 @@ The MCP token maps to one user and all queries are scoped to that user's busines
 - Add rate limiting, request size limits, structured logging and monitoring.
 - Test tenant isolation and concurrent sale/stock updates.
 - Confirm local tax/accounting requirements with a qualified professional; gross profit here excludes overhead, tax and payment fees.
-
 
 

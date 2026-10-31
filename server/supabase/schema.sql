@@ -35,6 +35,7 @@ create table if not exists public.products (
   unique (business_id, sku)
 );
 create index if not exists products_business_name_idx on public.products(business_id, name);
+create index if not exists business_members_user_idx on public.business_members(user_id);
 create table if not exists public.sales (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.businesses(id) on delete cascade,
@@ -47,6 +48,7 @@ create table if not exists public.sales (
   created_at timestamptz not null default now()
 );
 create index if not exists sales_business_created_idx on public.sales(business_id, created_at desc);
+create index if not exists sales_created_by_idx on public.sales(created_by);
 create table if not exists public.sale_items (
   id uuid primary key default gen_random_uuid(),
   sale_id uuid not null references public.sales(id) on delete cascade,
@@ -59,6 +61,8 @@ create table if not exists public.sale_items (
   line_total numeric(14,2) not null check (line_total >= 0),
   line_cost numeric(14,2) not null check (line_cost >= 0)
 );
+create index if not exists sale_items_sale_idx on public.sale_items(sale_id);
+create index if not exists sale_items_product_idx on public.sale_items(product_id);
 create table if not exists public.stock_movements (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.businesses(id) on delete cascade,
@@ -74,6 +78,8 @@ create table if not exists public.stock_movements (
   created_at timestamptz not null default now()
 );
 create index if not exists stock_movements_business_created_idx on public.stock_movements(business_id, created_at desc);
+create index if not exists stock_movements_product_idx on public.stock_movements(product_id);
+create index if not exists stock_movements_created_by_idx on public.stock_movements(created_by);
 create table if not exists public.audit_log (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.businesses(id) on delete cascade,
@@ -84,6 +90,8 @@ create table if not exists public.audit_log (
   details jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+create index if not exists audit_log_business_created_idx on public.audit_log(business_id, created_at desc);
+create index if not exists audit_log_actor_idx on public.audit_log(actor_user_id);
 -- Pilot MCP tokens are stored as hashes, never plaintext. Provision through trusted server-side admin tooling.
 create table if not exists public.mcp_tokens (
   id uuid primary key default gen_random_uuid(),
@@ -105,19 +113,26 @@ alter table public.stock_movements enable row level security;
 alter table public.audit_log enable row level security;
 alter table public.mcp_tokens enable row level security;
 
+drop policy if exists "members read own businesses" on public.businesses;
 create policy "members read own businesses" on public.businesses for select to authenticated
-using (exists (select 1 from public.business_members bm where bm.business_id = id and bm.user_id = auth.uid()));
-create policy "members read membership rows" on public.business_members for select to authenticated using (user_id = auth.uid());
+using (exists (select 1 from public.business_members bm where bm.business_id = id and bm.user_id = (select auth.uid())));
+drop policy if exists "members read membership rows" on public.business_members;
+create policy "members read membership rows" on public.business_members for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists "members read own products" on public.products;
 create policy "members read own products" on public.products for select to authenticated
-using (exists (select 1 from public.business_members bm where bm.business_id = products.business_id and bm.user_id = auth.uid()));
+using (exists (select 1 from public.business_members bm where bm.business_id = products.business_id and bm.user_id = (select auth.uid())));
+drop policy if exists "members read own sales" on public.sales;
 create policy "members read own sales" on public.sales for select to authenticated
-using (exists (select 1 from public.business_members bm where bm.business_id = sales.business_id and bm.user_id = auth.uid()));
+using (exists (select 1 from public.business_members bm where bm.business_id = sales.business_id and bm.user_id = (select auth.uid())));
+drop policy if exists "members read sale items" on public.sale_items;
 create policy "members read sale items" on public.sale_items for select to authenticated
-using (exists (select 1 from public.sales s join public.business_members bm on bm.business_id=s.business_id where s.id=sale_id and bm.user_id=auth.uid()));
+using (exists (select 1 from public.sales s join public.business_members bm on bm.business_id=s.business_id where s.id=sale_id and bm.user_id=(select auth.uid())));
+drop policy if exists "members read stock movements" on public.stock_movements;
 create policy "members read stock movements" on public.stock_movements for select to authenticated
-using (exists (select 1 from public.business_members bm where bm.business_id = stock_movements.business_id and bm.user_id = auth.uid()));
+using (exists (select 1 from public.business_members bm where bm.business_id = stock_movements.business_id and bm.user_id = (select auth.uid())));
+drop policy if exists "members read audit log" on public.audit_log;
 create policy "members read audit log" on public.audit_log for select to authenticated
-using (exists (select 1 from public.business_members bm where bm.business_id = audit_log.business_id and bm.user_id = auth.uid()));
+using (exists (select 1 from public.business_members bm where bm.business_id = audit_log.business_id and bm.user_id = (select auth.uid())));
 -- Do not grant end users access to MCP token hashes.
 
 -- Provisioning example (replace values after creating a Supabase Auth user):
@@ -196,4 +211,3 @@ revoke all on function public.stockpilot_record_sale(uuid,uuid,public.stockpilot
 revoke all on function public.stockpilot_record_stock_movement(uuid,uuid,uuid,numeric,public.stockpilot_movement_type,text,public.stockpilot_currency,numeric) from public, anon, authenticated;
 grant execute on function public.stockpilot_record_sale(uuid,uuid,public.stockpilot_currency,jsonb,text,text) to service_role;
 grant execute on function public.stockpilot_record_stock_movement(uuid,uuid,uuid,numeric,public.stockpilot_movement_type,text,public.stockpilot_currency,numeric) to service_role;
-
