@@ -101,6 +101,7 @@ create table if not exists public.mcp_tokens (
   revoked_at timestamptz,
   created_at timestamptz not null default now()
 );
+create index if not exists mcp_tokens_user_idx on public.mcp_tokens(user_id);
 
 -- RLS is enabled for browser-side access. This MVP routes writes through a server that performs
 -- explicit business-membership checks. Add equivalent policies before enabling direct browser queries.
